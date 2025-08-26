@@ -9,6 +9,8 @@ import { createRequire } from 'module';
 // global variable
 const currency = 'thb'
 const deliveryCharge = 10
+const satang = 100
+
 
 
 // gateway initialize
@@ -123,23 +125,44 @@ const placeOrderRazorpay = async (req, res) => {
 
 const placeOrderOmise = async (req, res) => {
     const { token } = req.headers;
-    const { userId, items, amount, address } = req.body;
+    const { userId, omiseToken, orderDataCredit: { items, address, amount } } = req.body;
+
     try {
         const charge = await omise.charges.create({
-            amount: amount, // 1000.00 THB
-            currency: 'thb',
-            card: token,
+            amount: amount * satang,
+            currency: 'THB',
+            card: omiseToken,
             description: 'Order payment'
         });
-        res.status(200).json({ success: true, charge });
+        const orderData = {
+            userId,
+            items,
+            address,
+            amount,
+            status: 'PENDING',
+            chargeId: charge.id,
+            paymentMethod: "CRD",
+            payment: true,
+            date: Date.now()
+        }
+        if (charge.status != "successful" || !charge.paid) {
+            orderData.payment = false;
+            const newOrder = new orderModel(orderData);
+            await newOrder.save()
+            res.status(200).json({ success: false, code: 424, message: "payment unsuccessfully" });
+        }
+        const newOrder = new orderModel(orderData);
+        await newOrder.save()
+        await userModel.findByIdAndUpdate(userId, { cartData: {} })
+        
+        res.status(200).json({ success: true, orderData });
     } catch (error) {
-        console.error(err);
+        console.error(error);
         res.status(500).json({ success: false, message: 'Charge failed' });
     }
 }
 
 //  All order data for admin panel
-
 const allOrders = async (req, res) => {
     try {
         const orders = await orderModel.find({})
@@ -151,11 +174,23 @@ const allOrders = async (req, res) => {
     }
 }
 
-//  User order data for dispaly
+//  User order data for display
 const userOrders = async (req, res) => {
     try {
         const { userId } = req.body
         const orders = await orderModel.find({ userId })
+        res.json({ success: true, orders })
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message })
+    }
+}
+
+//  Check order data for dispaly
+const checkOrder = async (req, res) => {
+    try {
+        const { chargeId } = req.body
+        const orders = await orderModel.find({ chargeId })
         res.json({ success: true, orders })
     } catch (error) {
         console.log(error);
@@ -176,4 +211,4 @@ const updateStatus = async (req, res) => {
     }
 }
 
-export { placeOrder, placeOrderRazorpay, placeOrderStripe, allOrders, userOrders, updateStatus, verifyStripe, placeOrderOmise }
+export { placeOrder, placeOrderRazorpay, placeOrderStripe, allOrders, userOrders, updateStatus, verifyStripe, placeOrderOmise, checkOrder }
