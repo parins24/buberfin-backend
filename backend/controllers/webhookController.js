@@ -3,26 +3,32 @@ import orderModel from "../models/orderModel.js";
 
 
 const webhookOmise = async (req, res) => {
-  const event = req.body;
+    try {
+        const event = req.body;
+        const chargeId = event.id;
+        const status = event.status;
+        const paid = event.paid;
 
-  try {
-    if (event.key === "charge.succeeded") {
-      await orderModel.findOneAndUpdate(
-        { chargeId: event.data.id },
-        { payment: true, status: "PAID" }
-      );
-    } else if (event.key === "charge.failed" || event.key === "charge.expired") {
-      await orderModel.findOneAndUpdate(
-        { chargeId: event.data.id },
-        { payment: false, status: "FAILED" }
-      );
+        const order = await orderModel.findOne({ chargeId });
+        if (!order) {
+            return res.status(404).json({ message: "Order not found" });
+        }
+
+        if (status === "successful" && paid) {
+            order.status = "PAID";
+            order.payment = true;
+        } else {
+            order.status = "FAILED";
+            order.payment = false;
+        }
+
+        await order.save();
+
+        res.status(200).json({ received: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ received: false });
     }
-
-    res.status(200).send("ok");
-  } catch (err) {
-    console.error("Webhook error", err);
-    res.status(500).send("error");
-  }
 }
 
-export  {webhookOmise};
+export { webhookOmise };
